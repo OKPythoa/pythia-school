@@ -3,7 +3,7 @@ const BASE = process.env.PYTHIA_SANDBOX || "http://127.0.0.1:18960";
 const STATE = process.env.PYTHIA_MAIL_STATE || "/var/lib/pythia-school/replied-uids.json";
 const LESSONS = process.env.PYTHIA_SCHOOL_LESSONS || "/var/lib/pythia-school/lessons.jsonl";
 const mode = process.argv[2] || "run";
-const POISON = /трак|стоянк|драйвер|главный фокус из этого письма|^\s*принято\.?\s*$/i;
+const POISON = /трак|стоянк|драйвер|главный фокус из этого письма|живой приём денег|^\s*принято\.?\s*$/i;
 async function job(tool, input) {
   const r = await fetch(BASE + "/v1/jobs", {
     method: "POST",
@@ -42,6 +42,22 @@ function appendLesson(row) {
 }
 function knowledgeId(x) { return x?.item?.id || x?.id || x?.knowledgeId || x?.result?.id || ""; }
 function poison(t) { return POISON.test(String(t || "")); }
+function flattenResearch(got) {
+  const src = got?.sources || got?.result?.sources || [];
+  const lines = [];
+  for (const s of src) {
+    const url = String(s.url || s.link || "");
+    const title = String(s.title || "");
+    const snip = String(s.snippet || s.text || "");
+    if (url) lines.push(url + " " + title + " " + snip);
+    else if (title || snip) lines.push((title + " " + snip).trim());
+  }
+  if (!lines.length) {
+    const cut = (typeof got === "string" ? got : JSON.stringify(got || {})).replace(/\s+/g, " ").trim().slice(0, 600);
+    if (cut) lines.push(cut);
+  }
+  return lines.filter((t) => t && !poison(t));
+}
 function lessonTexts(retrieved, local) {
   const fromMem = (retrieved?.items || retrieved?.results || []).map((i) => String(i.content || i.text || i.body || i.title || ""));
   const fromFile = local.map((i) => String(i.rule || i.text || i.content || ""));
@@ -49,7 +65,7 @@ function lessonTexts(retrieved, local) {
 }
 function questionOf(subject, body) {
   const lines = String(body || "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
-  const asked = lines.filter((l) => /[?]|\u043dазови |выбер|какой |почему|что сделать|как /i.test(l));
+  const asked = lines.filter((l) => /[?]|\u043dазови |выбер|какой |почему|что сделать|где |как /i.test(l));
   return (asked.slice(-2).join(" ") || lines.slice(-3).join(" ") || String(subject || "")).slice(0, 500);
 }
 function score(text, query) {
@@ -57,35 +73,29 @@ function score(text, query) {
   const t = String(text).toLowerCase();
   return q.reduce((n, w) => n + (t.includes(w) ? 1 : 0), 0);
 }
+function firstUrl(text) {
+  const m = String(text || "").match(/https?:\/\/[^\s"'<>]+/i);
+  return m ? m[0].replace(/[),.;]+$/, "") : "";
+}
 function cleanReply(s) {
-  let t = String(s || "").replace(/\{[\s\S]*\}/g, " ").replace(/\s+/g, " ").trim();
+  let t = String(s || "").replace(/\s+/g, " ").trim();
   t = t.replace(/^(принято|урок записан)\.?$/i, "");
   if (poison(t)) return "";
   if (t.length > 500) t = t.slice(0, 497) + "...";
   return t;
 }
-function extractTools(cap) {
-  const raw = cap?.tools || cap?.result?.tools || cap?.capabilities || cap || [];
-  const list = Array.isArray(raw) ? raw : Object.keys(raw || {});
-  return list.map((t) => String(t.name || t.id || t.tool || t)).filter(Boolean);
-}
-async function research(question, body) {
+async function research(question) {
   const found = [];
   try {
-    const extra = await job("knowledge_retrieve", { query: question + " " + String(body || "").slice(0, 240) });
+    const extra = await job("knowledge_retrieve", { query: question });
     for (const i of extra.items || extra.results || []) {
       const t = String(i.content || i.text || "").trim();
       if (t && !poison(t)) found.push(t);
     }
   } catch {}
   try {
-    const cap = await (await fetch(BASE + "/v1/capabilities")).json();
-    const probe = extractTools(cap).find((n) => /search|web|http|browse|research|fetch|lookup|crawl/i.test(n));
-    if (probe) {
-      const got = await job(probe, { query: question, text: question, q: question });
-      const cut = (typeof got === "string" ? got : JSON.stringify(got)).replace(/\s+/g, " ").trim().slice(0, 400);
-      if (cut && !poison(cut)) found.push(cut);
-    }
+    const got = await job("research", { query: question, count: 6 });
+    found.push(...flattenResearch(got));
   } catch {}
   try { await job("workspace_write", { path: "school/research-" + Date.now() + ".txt", text: "Q: " + question + "\n" + found.join("\n") }); } catch {}
   return found;
@@ -93,20 +103,20 @@ async function research(question, body) {
 function answerFrom(subject, body, lessons, researchHits) {
   const q = questionOf(subject, body);
   const pool = [...(researchHits || []), ...lessons].filter((t) => t && !poison(t));
-  const ranked = pool.map((text) => ({ text, n: score(text, q + " " + body) })).sort((a, b) => b.n - a.n);
-  if (ranked[0] && ranked[0].n >= 2) {
-    const line = cleanReply(ranked[0].text.replace(/^\u0423рок [^:]+:\s*/i, "").split(". ").slice(0, 2).join(". "));
-    if (line) return line;
+  const wantUrl = /url|ссылк|страниц|где /i.test(q + body);
+  if (wantUrl) {
+    const ranked = pool.map((text) => ({ text, url: firstUrl(text), n: score(text, q) })).sort((a, b) => {
+      const au = /okpythia\.com/i.test(a.url) ? 10 : a.url ? 3 : 0;
+      const bu = /okpythia\.com/i.test(b.url) ? 10 : b.url ? 3 : 0;
+      return (bu + b.n) - (au + a.n);
+    });
+    const hit = ranked.find((x) => x.url);
+    if (hit) return cleanReply(hit.url);
   }
-  const named = [];
-  if (/okpythia/i.test(body)) named.push("OkPythia");
-  if (/bimbo/i.test(body)) named.push("Bimbo Protocol");
-  if (/last window open|книг/i.test(body)) named.push("The Last Window Open");
-  const blob = (q + body).toLowerCase();
-  if (/назови|какой проект|фокус|толкать/i.test(blob) && named[0]) {
-    const whyBit = pool.find((t) => /потому|касс|оплат|трафик|жив/i.test(t));
-    if (whyBit) return cleanReply(named[0] + ". " + whyBit);
-    return cleanReply(named[0] + " — из трёх названных в письме это тот, у которого уже есть живой приём денег.");
+  const ranked = pool.map((text) => ({ text, n: score(text, q) })).sort((a, b) => b.n - a.n);
+  if (ranked[0] && ranked[0].n >= 2) {
+    const line = cleanReply(ranked[0].text.split(". ").slice(0, 2).join(". "));
+    if (line) return line;
   }
   return cleanReply(q);
 }
@@ -148,9 +158,10 @@ for (const m of edu) {
   const body = String(read.body || read.text || read.result?.body || "");
   const q = questionOf(m.subject, body);
   let retrieved = { items: [] };
-  try { retrieved = await job("knowledge_retrieve", { query: String(m.subject || "") + " " + q }); } catch {}
+  try { retrieved = await job("knowledge_retrieve", { query: q }); } catch {}
   const lessons = lessonTexts(retrieved, local);
-  const researchHits = lessons.some((t) => score(t, q) >= 3) ? [] : await research(q, body);
+  const needSearch = /url|ссылк|страниц|где |найти/i.test(q + body) || !lessons.some((t) => score(t, q) >= 3);
+  const researchHits = needSearch ? await research(q) : [];
   const text = cleanReply(answerFrom(m.subject, body, lessons, researchHits)) || cleanReply(q);
   const learned = await learn(m.subject, body, text);
   const sent = await job("mail_reply", { uid: Number.parseInt(uid, 10), text });
