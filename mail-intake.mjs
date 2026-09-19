@@ -168,12 +168,17 @@ function cleanReply(s) {
 function wantsUrl(q, body) {
   return /url|ссылк|страниц|где |найти|onecard|one-card|one card|http/i.test(String(q) + String(body));
 }
+function isJunkPath(u) {
+  return /\/(terms|privacy|refund|contact|legal|status-check)(\/|$)/i.test(String(u || ""));
+}
 function pageScore(page, q) {
   const blob = ((page.url || "") + " " + (page.title || "") + " " + (page.text || "")).toLowerCase();
   let n = score(blob, q);
-  if (/onecard|one-card|one card|tarot|таро/i.test(blob)) n += 8;
+  if (/onecard|one-card|one card|таро|tarot/i.test(blob)) n += 8;
+  if (/\/onecard/i.test(page.url || "")) n += 24;
   if (isHome(page.url)) n += 6;
   if (isRoot(page.url) && /onecard|one-card|подстраниц|subpage/i.test(q)) n -= 12;
+  if (isJunkPath(page.url)) n -= 22;
   if (/tragos\.ru|dtf\.ru/i.test(page.url || "")) n -= 20;
   return n;
 }
@@ -234,7 +239,11 @@ async function huntUrl(question, body) {
     uniq.push(p);
   }
   uniq.sort((a, b) => pageScore(b, q) - pageScore(a, q));
-  const best = uniq.find((p) => pageScore(p, q) > 0 && !/tragos\.ru|dtf\.ru/i.test(p.url || ""));
+  if (/onecard|one-card|one card/i.test(q)) {
+    const card = uniq.find((p) => /\/onecard/i.test(p.url || "") && p.status < 400);
+    if (card) return { url: card.url, pages: uniq.slice(0, 8).map((p) => p.url), research: hits.slice(0, 6) };
+  }
+  const best = uniq.find((p) => pageScore(p, q) > 0 && !/tragos\.ru|dtf\.ru/i.test(p.url || "") && !isJunkPath(p.url));
   return { url: best?.url || "", pages: uniq.slice(0, 8).map((p) => p.url), research: hits.slice(0, 6) };
 }
 
@@ -252,7 +261,7 @@ function answerFrom(subject, body, lessons, hunt) {
   if (ranked[0] && ranked[0].n >= 2) {
     const line = cleanReply(ranked[0].text.split(". ").slice(0, 2).join(". "));
     const u = firstUrl(line);
-    if (line && !(wantsUrl(q, body) && u && isRoot(u))) return line;
+    if (line && !(wantsUrl(q, body) && u && (isRoot(u) || isJunkPath(u)))) return line;
   }
   if (wantsUrl(q, body) && hunt?.url) return cleanReply(hunt.url);
   return cleanReply(q);
@@ -261,6 +270,7 @@ function answerFrom(subject, body, lessons, hunt) {
 async function learn(subject, body, answer, fetched) {
   if (poison(answer)) return { skipped: "poison" };
   if (/tragos\.ru|dtf\.ru/i.test(answer)) return { skipped: "poison-url" };
+  if (isJunkPath(answer)) return { skipped: "junk-path" };
   if (wantsUrl(questionOf(subject, body), body) && isRoot(answer) && /onecard|one-card|подстраниц|subpage/i.test(body)) {
     return { skipped: "homepage-not-product" };
   }
