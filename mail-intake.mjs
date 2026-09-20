@@ -15,6 +15,7 @@ const HOME = [
 const FETCH_MS = 12000;
 const TEXT_CAP = 24000;
 const UA = "PythiaSchool/007 (+https://okpythia.com)";
+const PRIMER_TEXT = "Наши сайты только okpythia.com, bimboprotocol.com, redgrimoire.com, theantigloss.com. Чужие не ответ. Сначала открыть страницу. Корень и terms не продукт. Продукт это что человек получает и цена. Ответ коротко своими словами, не одна ссылка и не меню сайта.";
 
 async function job(tool, input) {
   const r = await fetch(BASE + "/v1/jobs", {
@@ -168,11 +169,15 @@ function cleanReply(s) {
   if (t.length > 500) t = t.slice(0, 497) + "...";
   return t;
 }
+function isPrimer(subject, q, body) {
+  return /primer|вводн|четыре правил|правила школы|1 класс|не тест про ссылк/i.test(String(subject) + " " + String(q) + " " + String(body));
+}
 function wantsMeaning(q, body) {
+  if (isPrimer("", q, body)) return false;
   return /смысл|не ссылк|не только url|только url|что именно|что получает|что стоит|бесплатно|неверный/i.test(String(q) + " " + String(body));
 }
 function wantsUrl(q, body) {
-  if (wantsMeaning(q, body)) return false;
+  if (isPrimer("", q, body) || wantsMeaning(q, body)) return false;
   return /\burl\b|ссылк|страниц|где |найти|onecard|one-card|one card|http/i.test(String(q) + String(body));
 }
 function isJunkPath(u) {
@@ -276,6 +281,7 @@ function lessonTexts(retrieved, local) {
 
 function answerFrom(subject, body, lessons, hunt) {
   const q = questionOf(subject, body);
+  if (isPrimer(subject, q, body)) return PRIMER_TEXT;
   if (wantsMeaning(q, body)) {
     const sense = senseFrom(hunt, q) || senseFrom({ research: lessons }, q);
     if (sense && !isBareUrl(sense)) return sense;
@@ -297,6 +303,7 @@ async function learn(subject, body, answer, fetched) {
   if (poison(answer)) return { skipped: "poison" };
   if (/tragos\.ru|dtf\.ru/i.test(answer)) return { skipped: "poison-url" };
   if (isJunkPath(answer)) return { skipped: "junk-path" };
+  if (isPrimer(subject, questionOf(subject, body), body) && isBareUrl(answer)) return { skipped: "primer-not-url" };
   if (wantsMeaning(questionOf(subject, body), body) && isBareUrl(answer)) return { skipped: "bare-url-not-sense" };
   if (wantsUrl(questionOf(subject, body), body) && isRoot(answer) && /onecard|one-card|подстраниц|subpage/i.test(body)) {
     return { skipped: "homepage-not-product" };
@@ -347,7 +354,8 @@ for (const m of edu) {
   try { retrieved = await job("knowledge_retrieve", { query: q }); } catch {}
   const lessons = lessonTexts(retrieved, local);
   let hunt = { url: "", pages: [], research: [], blobs: [] };
-  if (wantsUrl(q, body) || wantsMeaning(q, body) || !lessons.some((t) => score(t, q) >= 3)) {
+  const primer = isPrimer(m.subject, q, body);
+  if (!primer && (wantsUrl(q, body) || wantsMeaning(q, body) || !lessons.some((t) => score(t, q) >= 3))) {
     try { hunt = await huntUrl(q, body); } catch (e) { hunt = { url: "", pages: [], research: ["hunt-error " + e.message], blobs: [] }; }
   }
   const text = cleanReply(answerFrom(m.subject, body, lessons, hunt)) || cleanReply(q);
