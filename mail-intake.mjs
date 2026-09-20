@@ -73,6 +73,9 @@ function firstUrl(text) {
   const m = String(text || "").match(/https?:\/\/[^\s"'<>]+/i);
   return m ? m[0].replace(/[),.;]+$/, "") : "";
 }
+function isBareUrl(t) {
+  return /^https?:\/\/\S+\/?$/.test(String(t || "").trim());
+}
 function extractUrls(text) {
   const out = [];
   const re = /https?:\/\/[^\s"'<>]+/gi;
@@ -89,7 +92,7 @@ function stripHtml(html) {
     .replace(/<style[\s\S]*?<\/style>/gi, " ")
     .replace(/<[^>]+>/g, " ")
     .replace(/&nbsp;/g, " ")
-    .replace(/&amp;/g, "&")
+    .replace(/&/g, "&")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -165,8 +168,12 @@ function cleanReply(s) {
   if (t.length > 500) t = t.slice(0, 497) + "...";
   return t;
 }
+function wantsMeaning(q, body) {
+  return /смысл|не ссылк|не только url|только url|что именно|что получает|что стоит|бесплатно|неверный/i.test(String(q) + " " + String(body));
+}
 function wantsUrl(q, body) {
-  return /url|ссылк|страниц|где |найти|onecard|one-card|one card|http/i.test(String(q) + String(body));
+  if (wantsMeaning(q, body)) return false;
+  return /\burl\b|ссылк|страниц|где |найти|onecard|one-card|one card|http/i.test(String(q) + String(body));
 }
 function isJunkPath(u) {
   return /\/(terms|privacy|refund|contact|legal|status-check)(\/|$)/i.test(String(u || ""));
@@ -181,6 +188,18 @@ function pageScore(page, q) {
   if (isJunkPath(page.url)) n -= 22;
   if (/tragos\.ru|dtf\.ru/i.test(page.url || "")) n -= 20;
   return n;
+}
+function senseFrom(hunt, q) {
+  const blobs = [...(hunt?.blobs || []), ...(hunt?.research || [])].filter((t) => t && !isBareUrl(t) && !poison(t));
+  const ranked = blobs.map((text) => {
+    let n = score(text, q);
+    if (/\$11|11 usd|free card|one card|бесплатн/i.test(text)) n += 6;
+    return { text, n };
+  }).sort((a, b) => b.n - a.n);
+  const pick = ranked.find((r) => r.n >= 1 && !isBareUrl(r.text));
+  if (!pick) return "";
+  const bits = String(pick.text).split(/(?<=[.!?])\s+/).filter((s) => s.length > 20 && !isBareUrl(s)).slice(0, 2);
+  return cleanReply(bits.join(" ") || pick.text);
 }
 
 async function sandboxResearch(question) {
@@ -239,31 +258,38 @@ async function huntUrl(question, body) {
     uniq.push(p);
   }
   uniq.sort((a, b) => pageScore(b, q) - pageScore(a, q));
-  if (/onecard|one-card|one card/i.test(q)) {
+  const blobs = uniq.slice(0, 6).map((p) => ((p.title || "") + ". " + (p.text || "")).trim()).filter(Boolean);
+  const pack = { pages: uniq.slice(0, 8).map((p) => p.url), research: hits.slice(0, 6), blobs };
+  if (/onecard|one-card|one card/i.test(q + body)) {
     const card = uniq.find((p) => /\/onecard/i.test(p.url || "") && p.status < 400);
-    if (card) return { url: card.url, pages: uniq.slice(0, 8).map((p) => p.url), research: hits.slice(0, 6) };
+    if (card) return { url: card.url, ...pack };
   }
   const best = uniq.find((p) => pageScore(p, q) > 0 && !/tragos\.ru|dtf\.ru/i.test(p.url || "") && !isJunkPath(p.url));
-  return { url: best?.url || "", pages: uniq.slice(0, 8).map((p) => p.url), research: hits.slice(0, 6) };
+  return { url: best?.url || "", ...pack };
 }
 
 function lessonTexts(retrieved, local) {
   const fromMem = (retrieved?.items || retrieved?.results || []).map((i) => String(i.content || i.text || i.body || i.title || ""));
   const fromFile = local.map((i) => String(i.rule || i.text || i.content || ""));
-  return [...fromMem, ...fromFile].map((t) => t.replace(/\s+/g, " ").trim()).filter((t) => t.length > 8 && !poison(t) && !/tragos\.ru/i.test(t));
+  return [...fromMem, ...fromFile].map((t) => t.replace(/\s+/g, " ").trim()).filter((t) => t.length > 8 && !poison(t) && !/tragos\.ru/i.test(t) && !isBareUrl(t));
 }
 
 function answerFrom(subject, body, lessons, hunt) {
   const q = questionOf(subject, body);
+  if (wantsMeaning(q, body)) {
+    const sense = senseFrom(hunt, q) || senseFrom({ research: lessons }, q);
+    if (sense && !isBareUrl(sense)) return sense;
+  }
   if (wantsUrl(q, body) && hunt?.url) return cleanReply(hunt.url);
-  const pool = [...(hunt?.research || []), ...lessons].filter((t) => t && !poison(t));
+  const pool = [...(hunt?.research || []), ...lessons].filter((t) => t && !poison(t) && !isBareUrl(t));
   const ranked = pool.map((text) => ({ text, n: score(text, q) })).sort((a, b) => b.n - a.n);
   if (ranked[0] && ranked[0].n >= 2) {
     const line = cleanReply(ranked[0].text.split(". ").slice(0, 2).join(". "));
-    const u = firstUrl(line);
-    if (line && !(wantsUrl(q, body) && u && (isRoot(u) || isJunkPath(u)))) return line;
+    if (line && !isBareUrl(line)) return line;
   }
   if (wantsUrl(q, body) && hunt?.url) return cleanReply(hunt.url);
+  const sense = senseFrom(hunt, q);
+  if (sense) return sense;
   return cleanReply(q);
 }
 
@@ -271,6 +297,7 @@ async function learn(subject, body, answer, fetched) {
   if (poison(answer)) return { skipped: "poison" };
   if (/tragos\.ru|dtf\.ru/i.test(answer)) return { skipped: "poison-url" };
   if (isJunkPath(answer)) return { skipped: "junk-path" };
+  if (wantsMeaning(questionOf(subject, body), body) && isBareUrl(answer)) return { skipped: "bare-url-not-sense" };
   if (wantsUrl(questionOf(subject, body), body) && isRoot(answer) && /onecard|one-card|подстраниц|subpage/i.test(body)) {
     return { skipped: "homepage-not-product" };
   }
@@ -319,9 +346,9 @@ for (const m of edu) {
   let retrieved = { items: [] };
   try { retrieved = await job("knowledge_retrieve", { query: q }); } catch {}
   const lessons = lessonTexts(retrieved, local);
-  let hunt = { url: "", pages: [], research: [] };
-  if (wantsUrl(q, body) || !lessons.some((t) => score(t, q) >= 3)) {
-    try { hunt = await huntUrl(q, body); } catch (e) { hunt = { url: "", pages: [], research: ["hunt-error " + e.message] }; }
+  let hunt = { url: "", pages: [], research: [], blobs: [] };
+  if (wantsUrl(q, body) || wantsMeaning(q, body) || !lessons.some((t) => score(t, q) >= 3)) {
+    try { hunt = await huntUrl(q, body); } catch (e) { hunt = { url: "", pages: [], research: ["hunt-error " + e.message], blobs: [] }; }
   }
   const text = cleanReply(answerFrom(m.subject, body, lessons, hunt)) || cleanReply(q);
   const learned = await learn(m.subject, body, text, Boolean(hunt.url));
