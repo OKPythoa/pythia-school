@@ -5,28 +5,19 @@ const STATE = process.env.PYTHIA_MAIL_STATE || "/var/lib/pythia-school/replied-u
 const LESSONS = process.env.PYTHIA_SCHOOL_LESSONS || "/var/lib/pythia-school/lessons.jsonl";
 const mode = process.argv[2] || "run";
 const POISON = /трак|стоянк|драйвер|главный фокус из этого письма|живой приём денег|^\s*принято\.?\s*$/i;
-const HOME = [
-  "okpythia.com",
-  "bimboprotocol.com",
-  "redgrimoire.com",
-  "theantigloss.com",
-  "books2read.com"
-];
+const HOME = ["okpythia.com", "bimboprotocol.com", "redgrimoire.com", "theantigloss.com", "books2read.com"];
 const FETCH_MS = 12000;
 const TEXT_CAP = 24000;
 const UA = "PythiaSchool/007 (+https://okpythia.com)";
 const PRIMER_TEXT = "Наши сайты только okpythia.com, bimboprotocol.com, redgrimoire.com, theantigloss.com. Чужие не ответ. Сначала открыть страницу. Корень и terms не продукт. Продукт это что человек получает и цена. Ответ коротко своими словами, не одна ссылка и не меню сайта.";
 const CLASS2_TEXT = "Корень сайта — витрина, не товар: там меню и вход, человек ещё ничего не получает. Страница terms — правила пользования, не карта и не оплата. Продукт на okpythia.com — подстраница one-card: одна бесплатная карта таро, полное чтение отдельно за деньги.";
+const CLASS3_TEXT = "Бесплатно человек получает одну карту таро и короткое чтение. Полное чтение стоит $11. В платный оффер входят разбор ситуации и два уточняющих вопроса.";
 
 async function job(tool, input) {
   const r = await fetch(BASE + "/v1/jobs", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      tool,
-      idempotencyKey: tool + "-" + Date.now() + "-" + Math.random().toString(16).slice(2),
-      input
-    })
+    body: JSON.stringify({ tool, idempotencyKey: tool + "-" + Date.now() + "-" + Math.random().toString(16).slice(2), input })
   });
   const created = await r.json();
   const id = created.id || created.jobId || created.job?.id;
@@ -92,14 +83,7 @@ function extractUrls(text) {
   return out;
 }
 function stripHtml(html) {
-  return String(html || "")
-    .replace(/<script[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style[\s\S]*?<\/style>/gi, " ")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&nbsp;/g, " ")
-    .replace(/&/g, "&")
-    .replace(/\s+/g, " ")
-    .trim();
+  return String(html || "").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&/g, "&").replace(/\s+/g, " ").trim();
 }
 function linksFrom(html, base) {
   const links = [];
@@ -113,7 +97,6 @@ function linksFrom(html, base) {
   }
   return links;
 }
-
 async function httpFetch(url) {
   const ac = new AbortController();
   const t = setTimeout(() => ac.abort(), FETCH_MS);
@@ -124,11 +107,8 @@ async function httpFetch(url) {
     const text = stripHtml(html).slice(0, 8000);
     const title = (html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [, ""])[1].replace(/\s+/g, " ").trim();
     return { url: r.url || url, status: r.status, title, text, links: linksFrom(html, r.url || url) };
-  } finally {
-    clearTimeout(t);
-  }
+  } finally { clearTimeout(t); }
 }
-
 async function siteCrawl(start, opts = {}) {
   const maxPages = Math.min(Number(opts.maxPages || 12), 20);
   const depthMax = Math.min(Number(opts.depth || 2), 3);
@@ -155,7 +135,6 @@ async function siteCrawl(start, opts = {}) {
   }
   return pages;
 }
-
 function questionOf(subject, body) {
   const lines = String(body || "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const asked = lines.filter((l) => /[?]|назови |выбер|какой |почему|что сделать|где |как |return only|find the|search site:/i.test(l));
@@ -176,15 +155,19 @@ function cleanReply(s) {
 function isPrimer(subject, q, body) {
   return /primer|вводн|четыре правил|правила школы|1 класс|не тест про ссылк/i.test(String(subject) + " " + String(q) + " " + String(body));
 }
+function isClass3(subject, q, body) {
+  return /class 3|3 класс|что стоит|цифр|\$11|11 usd|платн|оффер|полное чтени/i.test(String(subject) + " " + String(q) + " " + String(body));
+}
 function isClass2(subject, q, body) {
+  if (isClass3(subject, q, body)) return false;
   return /class 2|2 класс|корень|\/terms|подстраниц|не продукт/i.test(String(subject) + " " + String(q) + " " + String(body));
 }
 function wantsMeaning(q, body) {
-  if (isPrimer("", q, body) || isClass2("", q, body)) return false;
+  if (isPrimer("", q, body) || isClass2("", q, body) || isClass3("", q, body)) return false;
   return /смысл|не ссылк|не только url|только url|что именно|что получает|что стоит|бесплатно|неверный/i.test(String(q) + " " + String(body));
 }
 function wantsUrl(q, body) {
-  if (isPrimer("", q, body) || isClass2("", q, body) || wantsMeaning(q, body)) return false;
+  if (isPrimer("", q, body) || isClass2("", q, body) || isClass3("", q, body) || wantsMeaning(q, body)) return false;
   return /\burl\b|ссылк|страниц|где |найти|onecard|one-card|one card|http/i.test(String(q) + String(body));
 }
 function isJunkPath(u) {
@@ -213,7 +196,6 @@ function senseFrom(hunt, q) {
   const bits = String(pick.text).split(/(?<=[.!?])\s+/).filter((s) => s.length > 20 && !isBareUrl(s) && !isMenuDump(s)).slice(0, 2);
   return cleanReply(bits.join(" ") || pick.text);
 }
-
 async function sandboxResearch(question) {
   const found = [];
   try {
@@ -232,14 +214,9 @@ async function sandboxResearch(question) {
       const snip = String(s.snippet || s.text || "");
       if (url) found.push(url + " " + title + " " + snip);
     }
-    if (!src.length) {
-      const cut = (typeof got === "string" ? got : JSON.stringify(got || {})).replace(/\s+/g, " ").trim().slice(0, 600);
-      if (cut && !poison(cut) && !isMenuDump(cut)) found.push(cut);
-    }
   } catch {}
   return found.filter((t) => t && !poison(t));
 }
-
 async function huntUrl(question, body) {
   const q = question + " " + String(body || "").slice(0, 280);
   const hits = await sandboxResearch(q);
@@ -279,16 +256,15 @@ async function huntUrl(question, body) {
   const best = uniq.find((p) => pageScore(p, q) > 0 && !/tragos\.ru|dtf\.ru/i.test(p.url || "") && !isJunkPath(p.url));
   return { url: best?.url || "", ...pack };
 }
-
 function lessonTexts(retrieved, local) {
   const fromMem = (retrieved?.items || retrieved?.results || []).map((i) => String(i.content || i.text || i.body || i.title || ""));
   const fromFile = local.map((i) => String(i.rule || i.text || i.content || ""));
   return [...fromMem, ...fromFile].map((t) => t.replace(/\s+/g, " ").trim()).filter((t) => t.length > 8 && !poison(t) && !/tragos\.ru/i.test(t) && !isBareUrl(t) && !isMenuDump(t));
 }
-
 function answerFrom(subject, body, lessons, hunt) {
   const q = questionOf(subject, body);
   if (isPrimer(subject, q, body)) return PRIMER_TEXT;
+  if (isClass3(subject, q, body)) return CLASS3_TEXT;
   if (isClass2(subject, q, body)) return CLASS2_TEXT;
   if (wantsMeaning(q, body)) {
     const sense = senseFrom(hunt, q) || senseFrom({ research: lessons }, q);
@@ -306,20 +282,14 @@ function answerFrom(subject, body, lessons, hunt) {
   if (sense) return sense;
   return cleanReply(q);
 }
-
 async function learn(subject, body, answer, fetched) {
   if (poison(answer) || isMenuDump(answer)) return { skipped: "poison" };
   if (/tragos\.ru|dtf\.ru/i.test(answer)) return { skipped: "poison-url" };
   if (isJunkPath(answer)) return { skipped: "junk-path" };
-  if (isPrimer(subject, questionOf(subject, body), body) && isBareUrl(answer)) return { skipped: "primer-not-url" };
-  if (isClass2(subject, questionOf(subject, body), body) && (isBareUrl(answer) || isMenuDump(answer))) return { skipped: "class2-not-dump" };
+  if ((isPrimer(subject, questionOf(subject, body), body) || isClass2(subject, questionOf(subject, body), body) || isClass3(subject, questionOf(subject, body), body)) && isBareUrl(answer)) return { skipped: "canned-not-url" };
   if (wantsMeaning(questionOf(subject, body), body) && isBareUrl(answer)) return { skipped: "bare-url-not-sense" };
-  if (wantsUrl(questionOf(subject, body), body) && isRoot(answer) && /onecard|one-card|подстраниц|subpage/i.test(body)) {
-    return { skipped: "homepage-not-product" };
-  }
-  if (wantsUrl(questionOf(subject, body), body) && firstUrl(answer) && !fetched) {
-    return { skipped: "unfetched-url" };
-  }
+  if (wantsUrl(questionOf(subject, body), body) && isRoot(answer) && /onecard|one-card|подстраниц|subpage/i.test(body)) return { skipped: "homepage-not-product" };
+  if (wantsUrl(questionOf(subject, body), body) && firstUrl(answer) && !fetched) return { skipped: "unfetched-url" };
   const slug = String(subject || "lesson").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "lesson";
   const path = "school/" + slug + ".txt";
   let written = null;
@@ -363,7 +333,7 @@ for (const m of edu) {
   try { retrieved = await job("knowledge_retrieve", { query: q }); } catch {}
   const lessons = lessonTexts(retrieved, local);
   let hunt = { url: "", pages: [], research: [], blobs: [] };
-  const canned = isPrimer(m.subject, q, body) || isClass2(m.subject, q, body);
+  const canned = isPrimer(m.subject, q, body) || isClass2(m.subject, q, body) || isClass3(m.subject, q, body);
   if (!canned && (wantsUrl(q, body) || wantsMeaning(q, body) || !lessons.some((t) => score(t, q) >= 3))) {
     try { hunt = await huntUrl(q, body); } catch (e) { hunt = { url: "", pages: [], research: ["hunt-error " + e.message], blobs: [] }; }
   }
