@@ -1,0 +1,16 @@
+[Unit]
+Description=Pythia school mail-intake (one reply per new education letter)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/pythia-school
+Environment=PYTHIA_SANDBOX=http://127.0.0.1:18960
+Environment=PYTHIA_MAIL_STATE=/var/lib/pythia-school/replied-uids.json
+Environment=PYTHIA_SCHOOL_LESSONS=/var/lib/pythia-school/lessons.jsonl
+ExecStart=/usr/bin/node /opt/pythia-school/mail-intake.mjs run
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

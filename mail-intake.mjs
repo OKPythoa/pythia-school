@@ -5,11 +5,12 @@ const STATE = process.env.PYTHIA_MAIL_STATE || "/var/lib/pythia-school/replied-u
 const LESSONS = process.env.PYTHIA_SCHOOL_LESSONS || "/var/lib/pythia-school/lessons.jsonl";
 const mode = process.argv[2] || "run";
 const POISON = /трак|стоянк|драйвер|главный фокус из этого письма|живой приём денег|^\s*принято\.?\s*$/i;
+const PRICE_CARD = /\$11|полный разбор ситуации и два уточняющ/i;
 const SITES = ["okpythia.com", "bimboprotocol.com", "redgrimoire.com", "theantigloss.com"];
 const HOME = [...SITES, "books2read.com"];
 const FETCH_MS = 12000;
 const TEXT_CAP = 24000;
-const UA = "PythiaSchool/007 (+https://okpythia.com)";
+const UA = "PythiaSchool/008 (+https://okpythia.com)";
 
 const PRODUCTS = {
   "okpythia.com": {
@@ -39,8 +40,7 @@ const PRODUCTS = {
 };
 
 function pack(blob) {
-  const p = PRODUCTS[pickHost(blob)] || PRODUCTS["okpythia.com"];
-  return p;
+  return PRODUCTS[pickHost(blob)] || PRODUCTS["okpythia.com"];
 }
 function pickHost(blob) {
   const t = String(blob || "").toLowerCase();
@@ -63,10 +63,26 @@ function sayOffer(blob) {
 function intent(subject, q, body) {
   const t = (String(subject) + " " + String(q) + " " + String(body)).toLowerCase();
   if (/primer|вводн|четыре правил|правила школы|1 класс|наши сайт/i.test(t)) return "rules";
-  if (/цифр|\$|usd|цен|стоит|оффер|платн|бесплатн|полное чтени|class 3|3 класс/i.test(t)) return "offer";
   if (/корень|\/terms|подстраниц|не продукт|витрин|class 2|2 класс/i.test(t)) return "page";
   if (/найди url|верни только url|return only.*url|где страниц/i.test(t)) return "find";
-  return "offer";
+  const asksPrice = /цифр|\$|usd|цен|стоит|оффер|платн|бесплатн|полное чтени|class 3|3 класс/i.test(t);
+  const aboutOurTill = /okpythia|bimbo|redgrimoire|antigloss|одна карт|чтение|касс/i.test(t);
+  if (asksPrice && aboutOurTill) return "offer";
+  return "lesson";
+}
+
+function letterFacts(subject, body) {
+  const raw = String(body || "").replace(/\r/g, "");
+  const lines = raw.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const skip = /^(from:|to:|sent:|date:|subject:|ответь|напиши ответ|reply |-- |sent from)/i;
+  const keep = lines.filter((l) => {
+    if (skip.test(l)) return false;
+    if (isBareUrl(l) || isMenuDump(l) || poison(l)) return false;
+    if (l.length < 12) return false;
+    return /[.а-яА-Я]|focus|gate|class|факт|запомн|правил|урок/i.test(l);
+  });
+  const blob = keep.slice(0, 12).join(" ").replace(/\s+/g, " ").trim();
+  return blob.slice(0, 900);
 }
 
 async function job(tool, input) {
@@ -111,27 +127,15 @@ function hostOf(u) {
   try { return new URL(u).hostname.replace(/^www\./, ""); } catch { return ""; }
 }
 function isHome(u) { return HOME.includes(hostOf(u)); }
-function isRoot(u) {
-  try { return (new URL(u).pathname.replace(/\/+$/, "") || "/") === "/"; } catch { return false; }
-}
 function firstUrl(text) {
   const m = String(text || "").match(/https?:\/\/[^\s"'<>]+/i);
   return m ? m[0].replace(/[),.;]+$/, "") : "";
 }
 function isBareUrl(t) { return /^https?:\/\/\S+\/?$/.test(String(t || "").trim()); }
 function isMenuDump(t) { return /My Account|Start free|Free One-Card Tarot Reading — Pythia/i.test(String(t || "")); }
-function extractUrls(text) {
-  const out = [];
-  const re = /https?:\/\/[^\s"'<>]+/gi;
-  let m;
-  while ((m = re.exec(String(text || "")))) {
-    const u = m[0].replace(/[),.;]+$/, "");
-    if (!out.includes(u)) out.push(u);
-  }
-  return out;
-}
+function isJunkPath(u) { return /\/(terms|privacy|refund|contact|legal|status-check)(\/|$)/i.test(String(u || "")); }
 function stripHtml(html) {
-  return String(html || "").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&/g, "&").replace(/\s+/g, " ").trim();
+  return String(html || "").replace(/<script[\s\S]*?<\/script>/gi, " ").replace(/<style[\s\S]*?<\/style>/gi, " ").replace(/<[^>]+>/g, " ").replace(/&nbsp;/g, " ").replace(/&amp;/g, "&").replace(/\s+/g, " ").trim();
 }
 function linksFrom(html, base) {
   const links = [];
@@ -157,7 +161,6 @@ async function httpFetch(url) {
     return { url: r.url || url, status: r.status, title, text, links: linksFrom(html, r.url || url) };
   } finally { clearTimeout(t); }
 }
-function isJunkPath(u) { return /\/(terms|privacy|refund|contact|legal|status-check)(\/|$)/i.test(String(u || "")); }
 function questionOf(subject, body) {
   const lines = String(body || "").split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const asked = lines.filter((l) => /[?]|назови |выбер|какой |почему|что сделать|где |как |return only|find the|search site:/i.test(l));
@@ -167,42 +170,73 @@ function cleanReply(s) {
   let t = String(s || "").replace(/\s+/g, " ").trim();
   t = t.replace(/^(принято|урок записан)\.?$/i, "");
   if (poison(t) || isMenuDump(t)) return "";
-  if (t.length > 500) t = t.slice(0, 497) + "...";
+  if (t.length > 700) t = t.slice(0, 697) + "...";
   return t;
 }
-function answerFrom(subject, body) {
+function pickMemory(items, kind) {
+  const rows = [].concat(items || []).map((x) => String(x.content || x.text || x.rule || x.body || "")).filter(Boolean);
+  const usable = rows.filter((t) => {
+    if (poison(t) || isMenuDump(t) || isBareUrl(t)) return false;
+    if (kind !== "offer" && PRICE_CARD.test(t)) return false;
+    return t.length > 20;
+  });
+  return usable[0] || "";
+}
+async function remember(query) {
+  try {
+    const got = await job("knowledge_retrieve", { query: String(query || "").slice(0, 300), limit: 8 });
+    const items = got.items || got.results || got.knowledge || got.hits || [];
+    return Array.isArray(items) ? items : [];
+  } catch {
+    return [];
+  }
+}
+async function compose(subject, body) {
   const q = questionOf(subject, body);
   const blob = subject + " " + q + " " + body;
   const kind = intent(subject, q, body);
+  const facts = letterFacts(subject, body);
+  const mem = pickMemory(await remember(q + " " + subject), kind);
   if (kind === "rules") return sayRules();
   if (kind === "page") return sayPage(blob);
   if (kind === "offer") return sayOffer(blob);
-  if (kind === "find") return pack(blob).productUrl;
-  return sayOffer(blob);
+  if (kind === "find") {
+    const u = firstUrl(body);
+    if (u && isHome(u) && !isJunkPath(u) && !isRootish(u)) return u;
+    return pack(blob).productUrl;
+  }
+  if (facts && !PRICE_CARD.test(facts)) return facts;
+  if (mem) return mem;
+  return "В этом письме и в памяти нет достаточного факта. Цену не подставляю.";
 }
-async function learn(subject, body, answer) {
-  if (poison(answer) || isMenuDump(answer)) return { skipped: "poison" };
+function isRootish(u) {
+  try { return (new URL(u).pathname.replace(/\/+$/, "") || "/") === "/"; } catch { return false; }
+}
+async function learn(subject, body, answer, kind) {
+  const store = kind === "offer" ? answer : (letterFacts(subject, body) || answer);
+  if (poison(store) || isMenuDump(store)) return { skipped: "poison" };
+  if (kind !== "offer" && PRICE_CARD.test(store)) return { skipped: "price-card-not-a-lesson" };
   const slug = String(subject || "lesson").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 48) || "lesson";
   const path = "school/" + slug + ".txt";
   let written = null;
-  try { written = await job("workspace_write", { path, text: "Q: " + questionOf(subject, body) + "\nA: " + answer }); }
+  try { written = await job("workspace_write", { path, text: "Q: " + questionOf(subject, body) + "\nA: " + store }); }
   catch (e) { written = { error: String(e.message || e) }; }
   let kid = "";
   try {
-    const proposed = await job("knowledge_propose", { content: answer, kind: "lesson", tags: ["school", "mail", slug, "facts"] });
+    const proposed = await job("knowledge_propose", { content: store, kind: "lesson", tags: ["school", "mail", slug, "facts"] });
     kid = knowledgeId(proposed);
     if (kid) {
       await job("knowledge_validate", { knowledgeId: kid, verdict: "accepted", evidence: path });
       await job("knowledge_promote", { knowledgeId: kid, reason: "school-facts" });
     }
   } catch {}
-  appendLesson({ at: new Date().toISOString(), subject, rule: answer, path, knowledgeId: kid || null });
+  appendLesson({ at: new Date().toISOString(), subject, rule: store, path, knowledgeId: kid || null });
   return { path, written, knowledgeId: kid || null };
 }
 
 const listed = await job("mail_list", { limit: 40 });
 const msgs = listed.messages || listed.items || listed.mail || [];
-const edu = msgs.filter((m) => /Pythia Education|BRIDGE Gate|Gate 10/i.test(String(m.subject || "")));
+const edu = msgs.filter((m) => /Pythia Education|BRIDGE Gate|Gate 10|Focus 11/i.test(String(m.subject || "")));
 const state = loadState();
 const known = new Set((state.uids || []).map(String));
 
@@ -220,11 +254,17 @@ for (const m of edu) {
   if (known.has(uid)) continue;
   const read = await job("mail_read", { uid: Number.parseInt(uid, 10) });
   const body = String(read.body || read.text || read.result?.body || "");
-  const text = cleanReply(answerFrom(m.subject, body)) || sayOffer(m.subject + " " + body);
-  const learned = await learn(m.subject, body, text);
+  const kind = intent(m.subject, questionOf(m.subject, body), body);
+  const text = cleanReply(await compose(m.subject, body));
+  if (!text) {
+    known.add(uid);
+    out.push({ uid, subject: m.subject, intent: kind, skipped: "empty-after-clean" });
+    continue;
+  }
+  const learned = await learn(m.subject, body, text, kind);
   const sent = await job("mail_reply", { uid: Number.parseInt(uid, 10), text });
   known.add(uid);
-  out.push({ uid, subject: m.subject, intent: intent(m.subject, questionOf(m.subject, body), body), text, learned, status: sent.status || sent });
+  out.push({ uid, subject: m.subject, intent: kind, text, learned, status: sent.status || sent });
 }
 saveState({ uids: [...known], updatedAt: new Date().toISOString() });
 console.log(JSON.stringify({ replied: out.length, out }, null, 2));
