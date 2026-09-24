@@ -1,13 +1,13 @@
-# pythia-school
+# pythia-school — NOT PRODUCTION
 
-School on lv184:
+Do not install this on lv184.
 
-```
-curl -fsSL https://raw.githubusercontent.com/OKPythoa/pythia-school/main/install.sh | bash
-```
+`mail-intake.mjs` is a forbidden second brain. It answers `pythia@pythia-lab.com` with a regex offer card and races the real Pythia.
 
-Chat fail-open (memory must not kill turn 3) on lv184:
+Canon lives in private `OKPythoa/Pythia-Protocol`.
 
-```
-curl -fsSL https://raw.githubusercontent.com/OKPythoa/pythia-school/main/fix-chat-failopen.sh | bash
-```
+Mail path:
+
+new UID → pythia-v2-background-work ingress (no reasoning) → GPT-OSS Brain → sandbox tools → Qwen form → mail_reply
+
+If this repo is cloned on a server, do not enable `pythia-mail-intake.timer`.
