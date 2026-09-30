@@ -9,10 +9,10 @@
     const raw=String(text||'').trim();
     if(!raw) return [];
     const first=raw.split(/[.!?]/)[0].trim();
-    const words=first.split(/\s+/).filter(Boolean);
-    if(words.length<=3) return [words.join(' ')];
-    if(words.length<=6) return [words.slice(0,3).join(' '), words.slice(3).join(' ')];
-    return [words.slice(0,3).join(' '), words.slice(3,6).join(' ')];
+    const words=first.split(/\s+/).filter(Boolean).slice(0,8);
+    const out=[];
+    for(let i=0;i<words.length;i+=2) out.push(words.slice(i,i+2).join(' '));
+    return out.slice(0,4);
   }
   async function loadJSON(url){
     const r=await fetch(url,{cache:'no-store'});
