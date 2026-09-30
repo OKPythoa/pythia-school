@@ -12,13 +12,11 @@
     if(!response.ok) return null;
     return response.json();
   }
-  function coverFor(issues, key){
+  function issueRecord(issues, key){
     const list = Array.isArray(issues?.issues) ? issues.issues : [];
-    const hit = list.find(item => item && item.month === key && item.cover);
-    return hit ? String(hit.cover) : '';
+    return list.find(item => item && item.month === key) || null;
   }
   function paintCover(el, {key, number, label, image, tease}){
-    const padded=String(number).padStart(2,'0');
     const href=`issue.html?month=${encodeURIComponent(key)}`;
     const art = image ? `<img src="${esc(image)}" alt="">` : `<div class="issue-type"></div>`;
     const line = tease ? `<div class="issue-tease">${esc(tease)}</div>` : '';
@@ -48,8 +46,9 @@
       const number=issueNumber(firstDate, now);
       const padded=String(number).padStart(2,'0');
       const label=monthLabel(now);
-      const ofMonth=dated.filter(x=>monthKey(x.date)===key).sort((a,b)=>b.date-a.date);
-      const tease=(ofMonth[0]?.article?.title||'').trim();
+      const rec=issueRecord(issues, key);
+      const image=rec && rec.cover ? String(rec.cover) : '';
+      const tease=rec && rec.tease ? String(rec.tease).trim() : '';
       const numEl=document.getElementById('currentIssueNumber');
       const dateEl=document.getElementById('currentIssueDate');
       const button=document.getElementById('currentIssueButton');
@@ -59,7 +58,7 @@
         button.href=`issue.html?month=${encodeURIComponent(key)}`;
         button.textContent=`Read Issue ${padded}`;
       }
-      paintCover(cover, {key, number, label, image: coverFor(issues, key), tease});
+      paintCover(cover, {key, number, label, image, tease});
       const archiveHost=document.getElementById('issueArchive');
       if(archiveHost){
         const months=[];
