@@ -5,6 +5,14 @@
   function urlOf(a) {
     return a.url || ('articles/' + (a.slug || '') + '.html');
   }
+  function hideDup() {
+    const latest = document.getElementById('latestCards');
+    if (!latest || !window.AG_FEATURED_SLUG) return;
+    latest.querySelectorAll('a.card').forEach(function (card) {
+      const href = card.getAttribute('href') || '';
+      if (href.indexOf(window.AG_FEATURED_SLUG) !== -1) card.remove();
+    });
+  }
   async function run() {
     const hero = document.querySelector('.hero');
     const text = document.querySelector('.herotext');
@@ -21,27 +29,16 @@
     const url = src ? (src.charAt(0) === '/' || src.indexOf('http') === 0 ? src : '/' + src) : '';
     hero.classList.add('hero-featured');
     text.innerHTML =
-      '<p class="feat-kicker">Featured story</p>' +
+      '<p class="feat-kicker">' + esc(a.category || 'Featured') + '</p>' +
+      '<h2 class="feat-title"><a href="' + href + '">' + esc(a.title || '') + '</a></h2>' +
       '<p class="feat-dek">' + esc(a.dek || a.excerpt || '') + '</p>' +
+      '<p class="feat-meta">' + esc(a.date || '') + (a.readTime ? ' • ' + esc(a.readTime) : '') + '</p>' +
       '<a class="outline" href="' + href + '">Read story</a>';
     imgBox.style.backgroundImage = 'none';
-    imgBox.innerHTML = url ? ('<a href="' + href + '"><img src="' + esc(url) + '" alt="' + esc(a.title || '') + '"></a>') : '';
-    const latest = document.getElementById('latestCards');
-    if (latest) {
-      latest.querySelectorAll('a.card').forEach(function (card) {
-        const hrefCard = card.getAttribute('href') || '';
-        if (window.AG_FEATURED_SLUG && hrefCard.indexOf(window.AG_FEATURED_SLUG) !== -1) card.remove();
-      });
-    }
+    imgBox.innerHTML = url ? ('<a href="' + href + '"><img src="' + esc(url) + '" alt=""></a>') : '';
+    hideDup();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', function () { run().catch(console.error); });
   else run().catch(console.error);
-  window.addEventListener('load', function () {
-    const latest = document.getElementById('latestCards');
-    if (!latest || !window.AG_FEATURED_SLUG) return;
-    latest.querySelectorAll('a.card').forEach(function (card) {
-      const hrefCard = card.getAttribute('href') || '';
-      if (hrefCard.indexOf(window.AG_FEATURED_SLUG) !== -1) card.remove();
-    });
-  });
+  window.addEventListener('load', hideDup);
 })();
