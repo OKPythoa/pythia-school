@@ -22,15 +22,21 @@
   function recFor(issues,key){
     return ((issues&&issues.issues)||[]).find(i=>i&&i.month===key)||null;
   }
-  function paint(el,{key,label,image,tease}){
+  function barcode(issueNo){
+    const bits='1101010110110101101011010110101101101011010110110101';
+    const bars=[...bits].map(b=>`<i class="${b==='1'?'on':'off'}"></i>`).join('');
+    return `<div class="mc-bar"><b>ISSUE ${esc(issueNo)}</b><span>${bars}</span></div>`;
+  }
+  function paint(el,{key,label,image,tease,issueNo}){
     const href=`issue.html?month=${encodeURIComponent(key)}`;
     const img=image?`<img src="${esc(image)}" alt="">`:'';
     const lines=linesFrom(tease).map(x=>`<span>${esc(x)}</span>`).join('');
     el.innerHTML=`<a class="magazine-cover" href="${href}">
       <div class="issue-frame">${img}
-        <div class="mc-logo">The <b>AntiGloss</b></div>
+        <div class="mc-logo"><i>The</i> <b>AntiGloss</b></div>
         <div class="mc-date">${esc(label)}</div>
         <div class="mc-lines">${lines}</div>
+        ${barcode(issueNo)}
       </div>
     </a>`;
   }
@@ -51,7 +57,7 @@
     if(num) num.hidden=true;
     if(date) date.hidden=true;
     if(btn){btn.href=`issue.html?month=${encodeURIComponent(key)}`;btn.textContent=`Read Issue ${n}`;}
-    paint(cover,{key,label:monthLabel(now),image:rec&&rec.cover||'',tease:rec&&rec.tease||''});
+    paint(cover,{key,label:monthLabel(now),image:rec&&rec.cover||'',tease:rec&&rec.tease||'',issueNo:n});
     const arch=document.getElementById('issueArchive');
     if(arch){
       const months=[]; let c=new Date(first.getFullYear(),first.getMonth(),1); const end=new Date(now.getFullYear(),now.getMonth(),1);
