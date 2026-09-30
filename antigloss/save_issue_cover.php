@@ -22,6 +22,9 @@ if ($need === '' || $got === '' || !hash_equals($need, $got)) out(403, ['success
 
 $month = trim((string) ($_POST['month'] ?? ''));
 if (!preg_match('/^\d{4}-(0[1-9]|1[0-2])$/', $month)) out(400, ['success' => false, 'error' => 'month_required']);
+$tease = trim((string) ($_POST['tease'] ?? ''));
+if (strlen($tease) > 180) $tease = substr($tease, 0, 180);
+$slug = preg_replace('/[^a-zA-Z0-9._-]/', '', (string) ($_POST['slug'] ?? ''));
 
 $root = dirname(__DIR__);
 $path = $root . '/content/issues.json';
@@ -54,6 +57,8 @@ foreach ($data['issues'] as &$issue) {
     if (!is_array($issue) || ($issue['month'] ?? '') !== $month) continue;
     $found = true;
     if ($coverRel) $issue['cover'] = $coverRel;
+    if (array_key_exists('tease', $_POST)) $issue['tease'] = $tease;
+    if (array_key_exists('slug', $_POST)) $issue['slug'] = $slug;
     $issue['updatedAt'] = gmdate(DATE_ATOM);
 }
 unset($issue);
@@ -61,6 +66,8 @@ if (!$found) {
     $data['issues'][] = [
         'month' => $month,
         'cover' => $coverRel,
+        'tease' => $tease,
+        'slug' => $slug,
         'updatedAt' => gmdate(DATE_ATOM),
     ];
 }
@@ -74,4 +81,4 @@ if (@file_put_contents($tmp, $json, LOCK_EX) === false || !@rename($tmp, $path))
     @unlink($tmp);
     out(500, ['success' => false, 'error' => 'issues_write_failed']);
 }
-out(200, ['success' => true, 'month' => $month, 'cover' => $coverRel, 'issues' => $data['issues']]);
+out(200, ['success' => true, 'month' => $month, 'cover' => $coverRel, 'tease' => $tease, 'issues' => $data['issues']]);
