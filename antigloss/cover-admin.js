@@ -3,11 +3,18 @@
   const box = document.getElementById('issueCoverBox');
   if (!box) return;
   box.innerHTML = `<div class="section-title"><h3>Issue covers</h3></div>
-    <p class="small">Same column as articles. Each month: cover image + one cover story.</p>
+    <p class="small">Four latest issues in view. Scroll for older. Cover image + cover story per month.</p>
     <div id="coverBoard"></div>`;
   const board = document.getElementById('coverBoard');
   function keyFrom(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')}
   function labelFrom(key){const [y,m]=key.split('-').map(Number);return MONTHS[m-1]+' '+y}
+  function articleKey(article){
+    const raw=String(article.date||'');
+    if(/^\d{4}-\d{2}/.test(raw)) return raw.slice(0,7);
+    const d=new Date(raw);
+    if(Number.isNaN(d.getTime())) return '';
+    return keyFrom(d);
+  }
   async function loadJSON(url){const r=await fetch(url,{cache:'no-store'});if(!r.ok) return null;return r.json()}
   function auth(){const el=document.getElementById('key');return ((el&&el.value)||'').trim()}
   async function render(){
@@ -25,8 +32,8 @@
     }
     board.innerHTML = months.map(month=>{
       const rec=issues.find(x=>x && x.month===month)||{};
-      const rows=articles.filter(a=>String(a.date||'').slice(0,7)===month);
-      const opts=['<option value="">No cover story</option>'].concat(rows.map(a=>{
+      const rows=articles.filter(a=>articleKey(a)===month);
+      const opts=['<option value="">Cover story</option>'].concat(rows.map(a=>{
         const slug=String(a.slug||a.id||'');
         const sel=rec.slug&&rec.slug===slug?' selected':'';
         return `<option value="${slug}"${sel}>${String(a.title||'untitled').replace(/[<>]/g,'')}</option>`;
