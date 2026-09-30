@@ -6,11 +6,12 @@ from pathlib import Path
 import sys
 p = Path(sys.argv[1])
 t = p.read_text(encoding="utf-8")
+needle = '<div class="section-head"><h2>Requests</h2>'
 if 'id="issueCoverBox"' not in t:
-    needle = '  <div class="section-head"><h2>Requests</h2>'
     if needle not in t:
-        raise SystemExit("ads admin marker missing")
-    box = '''  <div class="section-head"><h2>Issue cover</h2><span class="muted">Same cover as article admin. Month/number automatic.</span></div>
+        print("ads cover box skipped: marker missing")
+    else:
+        box = '''<div class="section-head"><h2>Issue cover</h2><span class="muted">Same cover as article admin. Month/number automatic.</span></div>
   <div id="issueCoverBox" class="item" style="grid-template-columns:1fr">
     <div>
       <select id="issueMonth"></select>
@@ -21,7 +22,8 @@ if 'id="issueCoverBox"' not in t:
     </div>
   </div>
 '''
-    t = t.replace(needle, box + needle, 1)
+        t = t.replace(needle, box + needle, 1)
+        print("ads cover box added")
 js = r'''
 function fillIssueMonths(){const sel=document.getElementById("issueMonth");if(!sel||sel.options.length)return;const now=new Date();for(let i=0;i<24;i++){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const v=d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");sel.insertAdjacentHTML("beforeend","<option value=\""+v+"\">"+v+"</option>");}}
 async function refreshIssueCovers(){const list=document.getElementById("issueCoverList");if(!list)return;try{const data=await(await fetch("/content/issues.json?ts="+Date.now())).json();list.innerHTML=(data.issues||[]).map(i=> (i.month||"")+" — "+(i.cover?"cover set":"title only") ).join("<br>")||"No uploaded covers yet.";}catch(e){list.textContent="Cover list unavailable.";}}
@@ -33,7 +35,7 @@ if 'function fillIssueMonths' not in t and "$('load').onclick=load;" in t:
     t = t.replace("$('load').onclick=load;", js + "\n$('load').onclick=load;")
 old = "${ad.image?'Replace banner':'Upload banner'}</button></div></div></div>`"
 new = "${ad.image?'Replace banner':'Upload banner'}</button><button type=\"button\" onclick=\"deleteAd('${esc(ad.id)}')\">Delete ad</button></div></div></div>`"
-if 'deleteAd(' not in t and old in t:
+if 'function deleteAd' not in t and old in t:
     t = t.replace(old, new, 1)
 fn = '''
 async function deleteAd(id){
@@ -64,9 +66,10 @@ p = Path(sys.argv[1])
 t = p.read_text(encoding="utf-8")
 needle = '<a class="subbtn" href="advertise.html">Advertise</a>'
 if needle not in t:
-    raise SystemExit("index marker missing")
-p.write_text(t.replace(needle, needle + '\n  <div id="issueArchive" class="issue-archive"></div>', 1), encoding="utf-8")
-print("index archive strip added")
+    print("index archive skipped")
+else:
+    p.write_text(t.replace(needle, needle + '\n  <div id="issueArchive" class="issue-archive"></div>', 1), encoding="utf-8")
+    print("index archive strip added")
 PY
 fi
 
