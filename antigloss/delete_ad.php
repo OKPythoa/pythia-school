@@ -50,7 +50,7 @@ $bak = $adsPath . '.bak-delete-' . date('Ymd-His');
 $ads['ads'] = array_values($kept);
 $json = json_encode($ads, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 $tmp = $adsPath . '.tmp-' . bin2hex(random_bytes(4));
-if (@file_put_contents($tmp, $json, LOCK_EX) === false || !@rename($tmp, $path)) {
+if (@file_put_contents($tmp, $json, LOCK_EX) === false || !@rename($tmp, $adsPath)) {
     @unlink($tmp);
     out(500, ['success' => false, 'error' => 'ads_write_failed']);
 }
