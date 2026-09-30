@@ -17,17 +17,17 @@
     const hit = list.find(item => item && item.month === key && item.cover);
     return hit ? String(hit.cover) : '';
   }
-  function paintCover(el, {key, number, label, image}){
+  function paintCover(el, {key, number, label, image, tease}){
     const padded=String(number).padStart(2,'0');
     const href=`issue.html?month=${encodeURIComponent(key)}`;
-    const art = image
-      ? `<img src="${esc(image)}" alt="">`
-      : `<div class="issue-type"><span class="issue-brand">The <b>AntiGloss</b></span><i>${esc(label)}</i></div>`;
+    const art = image ? `<img src="${esc(image)}" alt="">` : `<div class="issue-type"></div>`;
+    const line = tease ? `<div class="issue-tease">${esc(tease)}</div>` : '';
     el.innerHTML = `<a class="magazine-cover" href="${href}">
       <div class="issue-frame">${art}
         <div class="issue-shade">
           <div class="issue-brand">The <b>AntiGloss</b></div>
-          <div class="issue-line">Issue ${padded} · ${esc(label)}</div>
+          <div class="issue-line">${esc(label)}</div>
+          ${line}
         </div>
       </div>
     </a>`;
@@ -48,6 +48,8 @@
       const number=issueNumber(firstDate, now);
       const padded=String(number).padStart(2,'0');
       const label=monthLabel(now);
+      const ofMonth=dated.filter(x=>monthKey(x.date)===key).sort((a,b)=>b.date-a.date);
+      const tease=(ofMonth[0]?.article?.title||'').trim();
       const numEl=document.getElementById('currentIssueNumber');
       const dateEl=document.getElementById('currentIssueDate');
       const button=document.getElementById('currentIssueButton');
@@ -57,7 +59,7 @@
         button.href=`issue.html?month=${encodeURIComponent(key)}`;
         button.textContent=`Read Issue ${padded}`;
       }
-      paintCover(cover, {key, number, label, image: coverFor(issues, key)});
+      paintCover(cover, {key, number, label, image: coverFor(issues, key), tease});
       const archiveHost=document.getElementById('issueArchive');
       if(archiveHost){
         const months=[];
