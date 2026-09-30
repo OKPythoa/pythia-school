@@ -21,12 +21,15 @@
     const padded=String(number).padStart(2,'0');
     const href=`issue.html?month=${encodeURIComponent(key)}`;
     const art = image
-      ? `<div class="issue-frame"><img src="${esc(image)}" alt="Issue ${padded} cover"></div>`
-      : `<div class="issue-frame issue-type"><b>The AntiGloss</b><i>${esc(label)}</i></div>`;
+      ? `<img src="${esc(image)}" alt="">`
+      : `<div class="issue-type"><span class="issue-brand">The <b>AntiGloss</b></span><i>${esc(label)}</i></div>`;
     el.innerHTML = `<a class="magazine-cover" href="${href}">
-      <div class="issue-masthead">The AntiGloss</div>
-      ${art}
-      <div class="issue-meta"><strong>Issue ${padded}</strong><span>${esc(label)}</span></div>
+      <div class="issue-frame">${art}
+        <div class="issue-shade">
+          <div class="issue-brand">The <b>AntiGloss</b></div>
+          <div class="issue-line">Issue ${padded} · ${esc(label)}</div>
+        </div>
+      </div>
     </a>`;
   }
   async function renderCurrentIssue(){
@@ -48,11 +51,11 @@
       const numEl=document.getElementById('currentIssueNumber');
       const dateEl=document.getElementById('currentIssueDate');
       const button=document.getElementById('currentIssueButton');
-      if(numEl) numEl.textContent=`Issue ${padded}`;
-      if(dateEl) dateEl.textContent=label;
+      if(numEl) numEl.hidden = true;
+      if(dateEl) dateEl.hidden = true;
       if(button){
         button.href=`issue.html?month=${encodeURIComponent(key)}`;
-        button.textContent=`▣ Read Issue ${padded}`;
+        button.textContent=`Read Issue ${padded}`;
       }
       paintCover(cover, {key, number, label, image: coverFor(issues, key)});
       const archiveHost=document.getElementById('issueArchive');
@@ -67,8 +70,8 @@
         archiveHost.innerHTML = months.reverse().map(d=>{
           const k=monthKey(d);
           const n=String(issueNumber(firstDate,d)).padStart(2,'0');
-          return `<a href="issue.html?month=${encodeURIComponent(k)}">Issue ${n} · ${monthLabel(d)}</a>`;
-        }).join(' ');
+          return `<a href="issue.html?month=${encodeURIComponent(k)}">Issue ${n}</a>`;
+        }).join('');
       }
     }catch(error){
       console.error('Current issue:', error);
